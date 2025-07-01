@@ -28,11 +28,11 @@ impl Camera for Camera2d {
     }
 
     fn proj(&self) -> glam::Mat4 {
-        glam::Mat4::orthographic_rh(0.0, self.width, 0.0, self.height, 0.0, 1.0)
+        glam::Mat4::orthographic_rh(0.0, self.width, self.height, 0.0, 0.0, 1.0)
     }
 }
 
-const SAFE_FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2 - 0.0001;
+// const SAFE_FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2 - 0.0001;
 
 #[derive(Debug)]
 pub struct PerspectiveCamera {

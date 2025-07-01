@@ -125,7 +125,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 format!("Could not load string: {}", path.display())
                             }),
                         )
-                        .await;
+                        .await.unwrap();
                     Ok(())
                 });
             }
@@ -137,7 +137,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 format!("Could not load string: {}", path.display())
                             }),
                         )
-                        .await;
+                        .await.unwrap();
                     Ok(())
                 });
             }

@@ -1,8 +1,8 @@
 pub mod bindings;
 pub mod buffer;
 pub mod data;
-pub mod pipeline;
 pub mod font;
+pub mod pipeline;
 pub mod utils;
 
 use std::sync::Arc;
@@ -10,7 +10,18 @@ use std::sync::Arc;
 use anyhow::Context;
 use winit::window::Window;
 
-use crate::{app::AppController, game::render::{bindings::{CameraBinder, SampledTextureBinder}, font::{Font, TextPipeline}}};
+use crate::{
+    app::AppController,
+    game::{
+        render::{
+            bindings::{CameraBinder, SampledTextureBinder},
+            buffer::BackedBuffer,
+            data::CameraData,
+            font::{Font, TextPipeline},
+        },
+        world::camera::Camera,
+    },
+};
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -22,6 +33,9 @@ pub struct Renderer {
     sampled_texture_binder: SampledTextureBinder,
     font: Font,
     text_pipeline: TextPipeline,
+    debug_text: font::TextBuffer,
+    ui_camera_buffer: BackedBuffer<CameraData>,
+    ui_camera_binding: bindings::CameraBinding,
 }
 
 impl Renderer {
@@ -60,7 +74,24 @@ impl Renderer {
         let sampled_texture_binder = SampledTextureBinder::new(&device);
 
         let font = Font::load(app, "fonts/OpenSans MSDF.zip", '�', &device, &queue).await?;
-        let text_pipeline = TextPipeline::new(app, &device, &font, config.format, &camera_binder, &sampled_texture_binder).await?;
+        let text_pipeline = TextPipeline::new(
+            app,
+            &device,
+            &font,
+            config.format,
+            &camera_binder,
+            &sampled_texture_binder,
+        )
+        .await?;
+
+        let debug_text = text_pipeline.buffer_text(&font, &device, "Hello, world!")?;
+
+        let ui_camera_buffer = BackedBuffer::with_data(
+            &device,
+            vec![CameraData::IDENTITY],
+            wgpu::BufferUsages::UNIFORM,
+        );
+        let ui_camera_binding = camera_binder.bind(&device, &ui_camera_buffer);
 
         Ok(Self {
             surface,
@@ -72,6 +103,9 @@ impl Renderer {
             sampled_texture_binder,
             font,
             text_pipeline,
+            debug_text,
+            ui_camera_buffer,
+            ui_camera_binding,
         })
     }
 
@@ -81,8 +115,8 @@ impl Renderer {
         self.config.height = height.max(1);
         self.surface.configure(&self.device, &self.config);
     }
-    
-    pub(crate) fn render(&mut self, app: &AppController) {
+
+    pub(crate) fn render(&mut self, app: &AppController, ui_camera: &impl Camera) {
         if !self.is_surface_configured {
             self.surface.configure(&self.device, &self.config);
             self.is_surface_configured = true;
@@ -101,6 +135,9 @@ impl Renderer {
                 }
             },
         };
+
+        self.ui_camera_buffer
+            .update(&self.queue, |data| data[0].update(ui_camera));
 
         let view = frame.texture.create_view(&Default::default());
 
@@ -121,6 +158,9 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+
+            self.text_pipeline
+                .draw_text(&mut ui_pass, &self.debug_text, &self.ui_camera_binding);
         }
 
         self.queue.submit([encoder.finish()]);

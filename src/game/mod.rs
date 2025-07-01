@@ -19,7 +19,11 @@ pub struct Game {
 impl Game {
     pub async fn new(app: &AppController, window: Arc<Window>) -> anyhow::Result<Self> {
         let renderer = Renderer::new(app, window.clone()).await?;
-        let world = World::new();
+
+        let width = window.inner_size().width.max(1);
+        let height = window.inner_size().height.max(1);
+
+        let world = World::new(width, height);
 
         window.request_redraw();
 
@@ -37,7 +41,7 @@ impl Game {
 
     pub fn render(&mut self, app: &AppController) {
         self.window.request_redraw();
-        self.renderer.render(app);
+        self.renderer.render(app, &self.world.ui_camera);
     }
 
     pub(crate) fn handle_close_requested(&mut self, app: &AppController) {
