@@ -65,15 +65,8 @@ impl App {
         // F: Send + 'static + FnOnce() -> Fut,
         Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let app = self.controller.clone();
         std::thread::spawn(move || {
-            match pollster::block_on(task) {
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!("{e}");
-                    app.exit();
-                }
-            };
+            pollster::block_on(task).unwrap();
         });
     }
 }
@@ -85,7 +78,9 @@ impl ApplicationHandler<AppEvent> for App {
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
 
         self.spawn_task(async move {
+            log::debug!("Creating game");
             let game = Game::new(&app, window).await?;
+            log::debug!("Game ready");
             app.proxy.send_event(AppEvent::GameStarted(game))?;
             Ok(())
         });
@@ -118,6 +113,7 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::GameStarted(game) => self.game = Some(game),
             AppEvent::Exit => event_loop.exit(),
             AppEvent::LoadString(path, sender) => {
+                log::debug!("LoadString({path:?}, ..)");
                 self.spawn_task(async move {
                     sender
                         .send(
@@ -130,6 +126,7 @@ impl ApplicationHandler<AppEvent> for App {
                 });
             }
             AppEvent::LoadBinary(path, sender) => {
+                log::debug!("LoadBinary({path:?}, ..)");
                 self.spawn_task(async move {
                     sender
                         .send(

@@ -18,6 +18,7 @@ pub struct Game {
 
 impl Game {
     pub async fn new(app: &AppController, window: Arc<Window>) -> anyhow::Result<Self> {
+        log::debug!("Creating Renderer");
         let renderer = Renderer::new(app, window.clone()).await?;
 
         let width = window.inner_size().width.max(1);

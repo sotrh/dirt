@@ -43,12 +43,15 @@ impl Renderer {
         let width = window.inner_size().width.max(1);
         let height = window.inner_size().height.max(1);
 
+        log::debug!("Instance");
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             ..Default::default()
         });
 
+        log::debug!("Surface");
         let surface = instance.create_surface(window)?;
 
+        log::debug!("Adapter");
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 compatible_surface: Some(&surface),
