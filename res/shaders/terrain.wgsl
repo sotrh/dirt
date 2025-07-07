@@ -1,5 +1,10 @@
-#group(0, CameraBinder)
-#group(1, SampledTextureBinder)
+struct TerrainData {
+    terrain_height__tile_size: vec2<f32>,
+}
+
+@group(0)
+@binding(0)
+var<uniform> terrain_data: TerrainData;
 
 struct VsOut {
     @builtin(position)
@@ -11,14 +16,28 @@ struct VsOut {
 }
 
 @vertex
-fn displace_terrain() -> VsOut {
-    // let world_position = 
+fn displace_terrain(
+   @builtin(vertex_index) index: u32,
+) -> VsOut {
+    let i = f32(index);
+    let x = i % terrain_data.terrain_height__tile_size.y;
+    let y = -1.0;
+    let z = i / terrain_data.terrain_height__tile_size.y;
+
+    let world_position = vec3(x, y, z);
+    let world_normal = vec3(0.0, 1.0, 0.0);
+    let frag_position = vec4(world_position, 1.0);
 
     return VsOut(
         frag_position,
         world_position,
         world_normal,
     );
+}
+
+@fragment
+fn debug(vs: VsOut) -> @location(0) vec4<f32> {
+    return vec4(vs.world_normal * 0.5 + 0.5, 1.0);
 }
 
 // https://gist.github.com/munrocket/236ed5ba7e409b8bdf1ff6eca5dcdc39

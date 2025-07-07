@@ -1,6 +1,6 @@
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::Arc, time::Duration,
 };
 
 use anyhow::Context;
@@ -62,7 +62,6 @@ impl App {
 
     fn spawn_task<Fut>(&self, task: Fut)
     where
-        // F: Send + 'static + FnOnce() -> Fut,
         Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
         std::thread::spawn(move || {
@@ -79,6 +78,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         self.spawn_task(async move {
             log::debug!("Creating game");
+            std::thread::sleep(Duration::from_millis(1000));
             let game = Game::new(&app, window).await?;
             log::debug!("Game ready");
             app.proxy.send_event(AppEvent::GameStarted(game))?;
@@ -110,7 +110,10 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
-            AppEvent::GameStarted(game) => self.game = Some(game),
+            AppEvent::GameStarted(game) => {
+                game.window.request_redraw();
+                self.game = Some(game);
+            },
             AppEvent::Exit => event_loop.exit(),
             AppEvent::LoadString(path, sender) => {
                 log::debug!("LoadString({path:?}, ..)");

@@ -1,10 +1,10 @@
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use winit::{keyboard::KeyCode, window::Window};
 
 use crate::{
-    app::{App, AppController},
-    game::{render::Renderer, world::{camera::{Camera2d, PerspectiveCamera}, World}},
+    app::AppController,
+    game::{render::Renderer, world::World},
 };
 
 mod render;
@@ -12,8 +12,8 @@ mod world;
 
 pub struct Game {
     renderer: Renderer,
-    window: Arc<Window>,
     world: World,
+    pub(crate) window: Arc<Window>,
 }
 
 impl Game {
@@ -24,9 +24,7 @@ impl Game {
         let width = window.inner_size().width.max(1);
         let height = window.inner_size().height.max(1);
 
-        let world = World::new(width, height);
-
-        window.request_redraw();
+        let world = World::new(width, height, 16, 256, 100.0);
 
         Ok(Self {
             renderer,
