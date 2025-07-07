@@ -19,7 +19,7 @@ use crate::{
             buffer::BackedBuffer,
             data::CameraData,
             font::{Font, TextPipeline},
-            terrain::{TerrainBuffer, TerrainPipeline},
+            terrain::{TerrainBuffer, TerrainPipeline, TileInstance},
         },
         world::{camera::Camera, terrain::Terrain},
     },
@@ -43,6 +43,8 @@ pub struct Renderer {
     terrain_buffers: Vec<TerrainBuffer>,
     depth_buffer: wgpu::Texture,
     depth_buffer_view: wgpu::TextureView,
+    main_camera_buffer: BackedBuffer<CameraData>,
+    main_camera_binding: bindings::CameraBinding,
 }
 
 impl Renderer {
@@ -117,6 +119,13 @@ impl Renderer {
         );
         let ui_camera_binding = camera_binder.bind(&device, &ui_camera_buffer);
 
+        let main_camera_buffer = BackedBuffer::with_data(
+            &device,
+            vec![CameraData::IDENTITY],
+            wgpu::BufferUsages::UNIFORM,
+        );
+        let main_camera_binding = camera_binder.bind(&device, &main_camera_buffer);
+
         let depth_format = wgpu::TextureFormat::Depth32Float;
         let depth_buffer = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth_buffer"),
@@ -135,9 +144,15 @@ impl Renderer {
         let depth_buffer_view = depth_buffer.create_view(&Default::default());
 
         let terrain_binder = UniformBinder::new(&device, wgpu::ShaderStages::VERTEX);
-        let terrain_pipeline =
-            TerrainPipeline::new(app, &device, &terrain_binder, config.format, depth_format)
-                .await?;
+        let terrain_pipeline = TerrainPipeline::new(
+            app,
+            &device,
+            &terrain_binder,
+            &camera_binder,
+            config.format,
+            depth_format,
+        )
+        .await?;
 
         Ok(Self {
             surface,
@@ -152,6 +167,8 @@ impl Renderer {
             debug_text,
             ui_camera_buffer,
             ui_camera_binding,
+            main_camera_buffer,
+            main_camera_binding,
             depth_buffer,
             depth_buffer_view,
             terrain_binder,
@@ -183,7 +200,12 @@ impl Renderer {
         self.depth_buffer_view = self.depth_buffer.create_view(&Default::default());
     }
 
-    pub(crate) fn render(&mut self, app: &AppController, ui_camera: &impl Camera) {
+    pub(crate) fn render(
+        &mut self,
+        app: &AppController,
+        ui_camera: &impl Camera,
+        player_camera: &impl Camera,
+    ) {
         if !self.is_surface_configured {
             self.surface.configure(&self.device, &self.config);
             self.is_surface_configured = true;
@@ -205,6 +227,8 @@ impl Renderer {
 
         self.ui_camera_buffer
             .update(&self.queue, |data| data[0].update(ui_camera));
+        self.main_camera_buffer
+            .update(&self.queue, |data| data[0].update(player_camera));
 
         let view = frame.texture.create_view(&Default::default());
 
@@ -234,7 +258,8 @@ impl Renderer {
             });
 
             for buffer in &self.terrain_buffers {
-                self.terrain_pipeline.draw(&mut main_pass, buffer);
+                self.terrain_pipeline
+                    .draw(&mut main_pass, &self.main_camera_binding, buffer);
             }
         }
 
@@ -271,7 +296,21 @@ impl Renderer {
             terrain.max_height,
         );
         self.terrain_buffers.push(buffer);
+
         id
+    }
+
+    pub fn update_terrain(&mut self, terrain_id: usize, terrain: &Terrain) {
+        let buffer = &mut self.terrain_buffers[terrain_id];
+        buffer.tiles.clear();
+        let mut batch = buffer.tiles.batch(&self.device, &self.queue);
+        for (i, _tile) in terrain.tiles.iter().enumerate() {
+            let position = glam::vec2(
+                (i as u32 % terrain.size * terrain.tile_size) as _,
+                (i as u32 / terrain.size * terrain.tile_size) as _,
+            );
+            batch.push(TileInstance { position });
+        }
     }
 
     // pub fn update_terrain(&)

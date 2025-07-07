@@ -172,6 +172,7 @@ impl ApplicationHandler<AppEvent> for App {
             } => {
                 game.handle_key(&self.controller, key, state.is_pressed());
             }
+            WindowEvent::MouseInput { state, button, .. } => game.handle_mouse_button(button, state.is_pressed()),
             WindowEvent::RedrawRequested => game.render(app),
             WindowEvent::Resized(size) => game.resize(size.width, size.height),
             _ => {}

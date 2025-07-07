@@ -6,7 +6,14 @@ pub struct Terrain {
 }
 impl Terrain {
     pub(crate) fn generate(terrain_size: u32, tile_size: u32, max_height: f32) -> Terrain {
-        todo!()
+        Terrain {
+            max_height,
+            size: terrain_size,
+            tile_size,
+            tiles: vec![TerrainTile {
+                height_map: vec![0.0; (tile_size * tile_size) as _],
+            }],
+        }
     }
 }
 

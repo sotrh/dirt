@@ -20,6 +20,7 @@ pollster = "0.4.0"
 ron = "0.10.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
+web-time = "1.1.0"
 wgpu = "25.0.2"
 winit = "0.30.11"
 zip = "4.2.0"

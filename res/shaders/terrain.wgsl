@@ -6,30 +6,51 @@ struct TerrainData {
 @binding(0)
 var<uniform> terrain_data: TerrainData;
 
+struct CameraUniform {
+    view_proj: mat4x4<f32>,
+}
+
+@group(1)
+@binding(0)
+var<uniform> camera: CameraUniform;
+
+struct TileInstance {
+    @location(0)
+    tile_offset: vec2<f32>,
+}
+
 struct VsOut {
     @builtin(position)
     frag_position: vec4<f32>,
     @location(0)
-    world_position: vec3<f32>,
+    debug: vec3<f32>,
     @location(1)
+    world_position: vec3<f32>,
+    @location(2)
     world_normal: vec3<f32>
 }
 
 @vertex
 fn displace_terrain(
    @builtin(vertex_index) index: u32,
+   instance: TileInstance,
 ) -> VsOut {
     let i = f32(index);
-    let x = i % terrain_data.terrain_height__tile_size.y;
-    let y = -1.0;
-    let z = i / terrain_data.terrain_height__tile_size.y;
+    let x = i % terrain_data.terrain_height__tile_size.y + instance.tile_offset.x;
+    let z = i / terrain_data.terrain_height__tile_size.y + instance.tile_offset.y;
 
-    let world_position = vec3(x, y, z);
+    var world_position = vec3(x, 0.0, z);
+
+    world_position.y = height_map(world_position.xz);
+
     let world_normal = vec3(0.0, 1.0, 0.0);
-    let frag_position = vec4(world_position, 1.0);
+    let frag_position = camera.view_proj * vec4(world_position, 1.0);
+    let f = world_position.y / terrain_data.terrain_height__tile_size.x;
+    let debug = vec3(f);
 
     return VsOut(
         frag_position,
+        debug,
         world_position,
         world_normal,
     );
@@ -37,7 +58,30 @@ fn displace_terrain(
 
 @fragment
 fn debug(vs: VsOut) -> @location(0) vec4<f32> {
-    return vec4(vs.world_normal * 0.5 + 0.5, 1.0);
+    return vec4(vs.debug, 1.0);
+}
+
+fn height_map(p: vec2<f32>) -> f32 {
+    return (fbm(p) * 0.5 + 0.5) * terrain_data.terrain_height__tile_size.x;
+}
+
+fn fbm(p: vec2<f32>) -> f32 {
+    // TODO: add this to uniforms
+    let NUM_OCTAVES: u32 = 5u;
+    var x = p * 0.01;
+    var v = 0.0;
+    var a = 0.5;
+    let shift = vec2<f32>(100.0);
+    let cs = vec2<f32>(cos(0.5), sin(0.5));
+    let rot = mat2x2<f32>(cs.x, cs.y, -cs.y, cs.x);
+
+    for (var i = 0u; i < NUM_OCTAVES; i = i + 1u) {
+        v = v + a * snoise2(x);
+        x = rot * x * 2.0 + shift;
+        a = a * 0.5;
+    }
+
+    return v;
 }
 
 // https://gist.github.com/munrocket/236ed5ba7e409b8bdf1ff6eca5dcdc39

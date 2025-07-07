@@ -4,7 +4,7 @@ use wgpu::wgc::device;
 use crate::{
     app::AppController,
     game::render::{
-        bindings::{UniformBinder, UniformBinding},
+        bindings::{CameraBinder, CameraBinding, UniformBinder, UniformBinding},
         buffer::BackedBuffer,
         utils::RenderPipelineBuilder,
     },
@@ -12,8 +12,8 @@ use crate::{
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct TileInstance {
-    position: glam::Vec2,
+pub struct TileInstance {
+    pub position: glam::Vec2,
 }
 
 impl TileInstance {
@@ -35,7 +35,7 @@ pub struct TerrainData {
 
 pub struct TerrainBuffer {
     indices: BackedBuffer<u32>,
-    tiles: BackedBuffer<TileInstance>,
+    pub tiles: BackedBuffer<TileInstance>,
     terrain_data: BackedBuffer<TerrainData>,
     binding: UniformBinding<TerrainData>,
     // todo: textures
@@ -49,15 +49,15 @@ impl TerrainBuffer {
         terrain_height: f32,
     ) -> Self {
         let mut index_data = Vec::new();
-        for z in 0..tile_size {
-            for x in 0..tile_size {
+        for z in 0..tile_size - 1 {
+            for x in 0..tile_size - 1 {
                 let i = x + z * tile_size;
                 index_data.push(i);
+                index_data.push(i + 1 + tile_size);
                 index_data.push(i + 1);
-                index_data.push(i + 1 + tile_size);
                 index_data.push(i);
-                index_data.push(i + 1 + tile_size);
                 index_data.push(i + tile_size);
+                index_data.push(i + 1 + tile_size);
             }
         }
         let indices = BackedBuffer::with_data(&device, index_data, wgpu::BufferUsages::INDEX);
@@ -91,11 +91,12 @@ impl TerrainPipeline {
         app: &AppController,
         device: &wgpu::Device,
         uniform_binder: &UniformBinder<TerrainData>,
+        camera_binder: &CameraBinder,
         surface_format: wgpu::TextureFormat,
         depth_format: wgpu::TextureFormat,
     ) -> anyhow::Result<Self> {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            bind_group_layouts: &[uniform_binder.layout()],
+            bind_group_layouts: &[uniform_binder.layout(), camera_binder.layout()],
             ..Default::default()
         });
 
@@ -106,6 +107,7 @@ impl TerrainPipeline {
 
         let pipeline = RenderPipelineBuilder::new()
             .layout(&layout)
+            .cull_mode(Some(wgpu::Face::Back))
             .vertex(wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("displace_terrain"),
@@ -128,13 +130,19 @@ impl TerrainPipeline {
         Ok(Self { pipeline })
     }
 
-    pub fn draw<'a, 'b: 'a>(&'a self, pass: &'a mut wgpu::RenderPass<'b>, buffer: &'a TerrainBuffer) {
+    pub fn draw<'a, 'b: 'a>(
+        &'a self,
+        pass: &'a mut wgpu::RenderPass<'b>,
+        camera: &CameraBinding,
+        buffer: &'a TerrainBuffer,
+    ) {
         if buffer.tiles.len() == 0 {
             return;
         }
 
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, buffer.binding.bind_group(), &[]);
+        pass.set_bind_group(1, camera.bind_group(), &[]);
         pass.set_index_buffer(buffer.indices.slice(), wgpu::IndexFormat::Uint32);
         pass.set_vertex_buffer(0, buffer.tiles.slice());
         pass.draw_indexed(0..buffer.indices.len(), 0, 0..buffer.tiles.len());
