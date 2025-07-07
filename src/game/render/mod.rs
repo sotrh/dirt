@@ -205,6 +205,7 @@ impl Renderer {
         app: &AppController,
         ui_camera: &impl Camera,
         player_camera: &impl Camera,
+        debug_mode_active: bool,
     ) {
         if !self.is_surface_configured {
             self.surface.configure(&self.device, &self.config);
@@ -258,8 +259,13 @@ impl Renderer {
             });
 
             for buffer in &self.terrain_buffers {
-                self.terrain_pipeline
-                    .draw(&mut main_pass, &self.main_camera_binding, buffer);
+                if debug_mode_active {
+                    self.terrain_pipeline
+                        .debug(&mut main_pass, &self.main_camera_binding, buffer);
+                } else {
+                    self.terrain_pipeline
+                        .draw(&mut main_pass, &self.main_camera_binding, buffer);
+                }
             }
         }
 

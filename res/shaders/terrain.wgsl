@@ -61,6 +61,13 @@ fn debug(vs: VsOut) -> @location(0) vec4<f32> {
     return vec4(vs.debug, 1.0);
 }
 
+@fragment
+fn triplanar_shaded(vs: VsOut) -> @location(0) vec4<f32> {
+    
+
+    return vec4(fract(vs.world_position * 0.1), 1.0);
+}
+
 fn height_map(p: vec2<f32>) -> f32 {
     return (fbm(p) * 0.5 + 0.5) * terrain_data.terrain_height__tile_size.x;
 }

@@ -21,6 +21,7 @@ pub struct Game {
     camera_controller: CameraController,
     game_play_timer: web_time::Instant,
     lmb_pressed: bool,
+    debug_mode_active: bool,
 }
 
 impl Game {
@@ -45,6 +46,7 @@ impl Game {
             camera_controller,
             game_play_timer: web_time::Instant::now(),
             lmb_pressed: false,
+            debug_mode_active: false,
         })
     }
 
@@ -66,7 +68,7 @@ impl Game {
             .update_terrain(self.terrain_id, &self.world.terrain);
 
         self.renderer
-            .render(app, &self.world.ui_camera, &self.world.player_camera);
+            .render(app, &self.world.ui_camera, &self.world.player_camera, self.debug_mode_active);
     }
 
     pub(crate) fn handle_close_requested(&mut self, app: &AppController) {
@@ -89,6 +91,7 @@ impl Game {
         match (key, is_pressed) {
             (KeyCode::Escape, _) => app.exit(),
             (KeyCode::KeyF, true) => self.toggle_fullscreen(),
+            (KeyCode::Digit0, true) => self.debug_mode_active = !self.debug_mode_active,
             _ => {}
         }
     }

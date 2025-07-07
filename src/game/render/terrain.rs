@@ -83,7 +83,8 @@ impl TerrainBuffer {
 }
 
 pub struct TerrainPipeline {
-    pipeline: wgpu::RenderPipeline,
+    triplanar_pipeline: wgpu::RenderPipeline,
+    debug_pipeline: wgpu::RenderPipeline,
 }
 
 impl TerrainPipeline {
@@ -105,7 +106,29 @@ impl TerrainPipeline {
             source: wgpu::ShaderSource::Wgsl(app.load_string("shaders/terrain.wgsl").await?.into()),
         });
 
-        let pipeline = RenderPipelineBuilder::new()
+        let triplanar_pipeline = RenderPipelineBuilder::new()
+            .layout(&layout)
+            .cull_mode(Some(wgpu::Face::Back))
+            .vertex(wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("displace_terrain"),
+                compilation_options: Default::default(),
+                buffers: &[TileInstance::LAYOUT],
+            })
+            .depth(depth_format, wgpu::CompareFunction::Less)
+            .fragment(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("triplanar_shaded"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            })
+            .build(device)?;
+
+        let debug_pipeline = RenderPipelineBuilder::new()
             .layout(&layout)
             .cull_mode(Some(wgpu::Face::Back))
             .vertex(wgpu::VertexState {
@@ -127,7 +150,7 @@ impl TerrainPipeline {
             })
             .build(device)?;
 
-        Ok(Self { pipeline })
+        Ok(Self { triplanar_pipeline, debug_pipeline })
     }
 
     pub fn draw<'a, 'b: 'a>(
@@ -140,7 +163,25 @@ impl TerrainPipeline {
             return;
         }
 
-        pass.set_pipeline(&self.pipeline);
+        pass.set_pipeline(&self.triplanar_pipeline);
+        pass.set_bind_group(0, buffer.binding.bind_group(), &[]);
+        pass.set_bind_group(1, camera.bind_group(), &[]);
+        pass.set_index_buffer(buffer.indices.slice(), wgpu::IndexFormat::Uint32);
+        pass.set_vertex_buffer(0, buffer.tiles.slice());
+        pass.draw_indexed(0..buffer.indices.len(), 0, 0..buffer.tiles.len());
+    }
+
+    pub fn debug<'a, 'b: 'a>(
+        &'a self,
+        pass: &'a mut wgpu::RenderPass<'b>,
+        camera: &CameraBinding,
+        buffer: &'a TerrainBuffer,
+    ) {
+        if buffer.tiles.len() == 0 {
+            return;
+        }
+
+        pass.set_pipeline(&self.debug_pipeline);
         pass.set_bind_group(0, buffer.binding.bind_group(), &[]);
         pass.set_bind_group(1, camera.bind_group(), &[]);
         pass.set_index_buffer(buffer.indices.slice(), wgpu::IndexFormat::Uint32);
