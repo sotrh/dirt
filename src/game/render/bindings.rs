@@ -12,7 +12,7 @@ impl CameraBinder {
             label: Some("CameraBinder"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -151,17 +151,15 @@ impl<T: Pod + Zeroable> UniformBinder<T> {
             bind_group: device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some(&std::any::type_name::<Self>()),
                 layout: &self.layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: data.buffer().as_entire_binding(),
-                    }
-                ],
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: data.buffer().as_entire_binding(),
+                }],
             }),
             _marker: self._marker,
         }
     }
-    
+
     pub(crate) fn layout(&self) -> &wgpu::BindGroupLayout {
         &self.layout
     }
@@ -173,6 +171,74 @@ pub struct UniformBinding<T> {
 }
 
 impl<T> UniformBinding<T> {
+    pub fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.bind_group
+    }
+}
+
+pub struct SampledTextureArrayBinder {
+    layout: wgpu::BindGroupLayout,
+}
+
+impl SampledTextureArrayBinder {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("SampledTextureArrayBinder"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        Self { layout }
+    }
+
+    pub fn bind(
+        &self,
+        device: &wgpu::Device,
+        texture: &wgpu::TextureView,
+        sampler: &wgpu::Sampler,
+    ) -> SampledTextureArrayBinding {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("SampledTextureArrayBinding"),
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(texture),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        });
+        SampledTextureArrayBinding { bind_group }
+    }
+    
+    pub(crate) fn layout(&self) -> &wgpu::BindGroupLayout {
+        &self.layout
+    }
+}
+
+pub struct SampledTextureArrayBinding {
+    bind_group: wgpu::BindGroup,
+}
+
+impl SampledTextureArrayBinding {
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
     }

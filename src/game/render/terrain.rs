@@ -1,10 +1,9 @@
 use bytemuck::{Pod, Zeroable};
-use wgpu::wgc::device;
 
 use crate::{
     app::AppController,
     game::render::{
-        bindings::{CameraBinder, CameraBinding, UniformBinder, UniformBinding},
+        bindings::{CameraBinder, CameraBinding, SampledTextureArrayBinder, SampledTextureArrayBinding, UniformBinder, UniformBinding},
         buffer::BackedBuffer,
         utils::RenderPipelineBuilder,
     },
@@ -93,10 +92,16 @@ impl TerrainPipeline {
         device: &wgpu::Device,
         uniform_binder: &UniformBinder<TerrainData>,
         camera_binder: &CameraBinder,
+        texture_binder: &SampledTextureArrayBinder,
         surface_format: wgpu::TextureFormat,
         depth_format: wgpu::TextureFormat,
     ) -> anyhow::Result<Self> {
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let triplanar_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            bind_group_layouts: &[uniform_binder.layout(), camera_binder.layout(), texture_binder.layout()],
+            ..Default::default()
+        });
+
+        let debug_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             bind_group_layouts: &[uniform_binder.layout(), camera_binder.layout()],
             ..Default::default()
         });
@@ -106,8 +111,9 @@ impl TerrainPipeline {
             source: wgpu::ShaderSource::Wgsl(app.load_string("shaders/terrain.wgsl").await?.into()),
         });
 
+        log::debug!("triplanar_pipeline");
         let triplanar_pipeline = RenderPipelineBuilder::new()
-            .layout(&layout)
+            .layout(&triplanar_layout)
             .cull_mode(Some(wgpu::Face::Back))
             .vertex(wgpu::VertexState {
                 module: &shader,
@@ -129,7 +135,7 @@ impl TerrainPipeline {
             .build(device)?;
 
         let debug_pipeline = RenderPipelineBuilder::new()
-            .layout(&layout)
+            .layout(&debug_layout)
             .cull_mode(Some(wgpu::Face::Back))
             .vertex(wgpu::VertexState {
                 module: &shader,
@@ -157,6 +163,7 @@ impl TerrainPipeline {
         &'a self,
         pass: &'a mut wgpu::RenderPass<'b>,
         camera: &CameraBinding,
+        textures: &SampledTextureArrayBinding,
         buffer: &'a TerrainBuffer,
     ) {
         if buffer.tiles.len() == 0 {
@@ -166,6 +173,7 @@ impl TerrainPipeline {
         pass.set_pipeline(&self.triplanar_pipeline);
         pass.set_bind_group(0, buffer.binding.bind_group(), &[]);
         pass.set_bind_group(1, camera.bind_group(), &[]);
+        pass.set_bind_group(2, textures.bind_group(), &[]);
         pass.set_index_buffer(buffer.indices.slice(), wgpu::IndexFormat::Uint32);
         pass.set_vertex_buffer(0, buffer.tiles.slice());
         pass.draw_indexed(0..buffer.indices.len(), 0, 0..buffer.tiles.len());

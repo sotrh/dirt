@@ -5,15 +5,19 @@ use crate::game::world::camera::Camera;
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct CameraData {
+    view_pos: glam::Vec4,
     view_proj: glam::Mat4,
 }
 
 impl CameraData {
     pub const IDENTITY: Self = Self {
+        view_pos: glam::Vec4::ZERO,
         view_proj: glam::Mat4::IDENTITY,
     };
 
     pub fn update(&mut self, camera: &impl Camera) {
+        let p = camera.view_pos();
+        self.view_pos = glam::vec4(p.x, p.y, p.z, 1.0);
         self.view_proj = camera.view_proj();
     }
 }

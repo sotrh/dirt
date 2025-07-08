@@ -1,6 +1,7 @@
 use winit::{dpi::PhysicalPosition, event::MouseScrollDelta, keyboard::KeyCode};
 
 pub trait Camera {
+    fn view_pos(&self) -> glam::Vec3;
     fn view(&self) -> glam::Mat4;
     fn proj(&self) -> glam::Mat4;
     fn view_proj(&self) -> glam::Mat4 {
@@ -25,6 +26,10 @@ impl Camera2d {
 }
 
 impl Camera for Camera2d {
+    fn view_pos(&self) -> glam::Vec3 {
+        glam::Vec3::ZERO
+    }
+
     fn view(&self) -> glam::Mat4 {
         glam::Mat4::IDENTITY
     }
@@ -75,6 +80,10 @@ impl PerspectiveCamera {
 }
 
 impl Camera for PerspectiveCamera {
+    fn view_pos(&self) -> glam::Vec3 {
+        self.position
+    }
+
     fn view(&self) -> glam::Mat4 {
         let (sin_pitch, cos_pitch) = self.pitch.sin_cos();
         let (sin_yaw, cos_yaw) = self.yaw.sin_cos();

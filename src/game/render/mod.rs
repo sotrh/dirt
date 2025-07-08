@@ -9,13 +9,16 @@ pub mod utils;
 use std::sync::Arc;
 
 use anyhow::Context;
+use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use crate::{
     app::AppController,
     game::{
         render::{
-            bindings::{CameraBinder, SampledTextureBinder, UniformBinder},
+            bindings::{
+                CameraBinder, SampledTextureArrayBinder, SampledTextureBinder, UniformBinder,
+            },
             buffer::BackedBuffer,
             data::CameraData,
             font::{Font, TextPipeline},
@@ -45,6 +48,7 @@ pub struct Renderer {
     depth_buffer_view: wgpu::TextureView,
     main_camera_buffer: BackedBuffer<CameraData>,
     main_camera_binding: bindings::CameraBinding,
+    terrain_texture_binding: bindings::SampledTextureArrayBinding,
 }
 
 impl Renderer {
@@ -52,12 +56,9 @@ impl Renderer {
         let width = window.inner_size().width.max(1);
         let height = window.inner_size().height.max(1);
 
-        log::debug!("Instance");
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             ..Default::default()
         });
-
-        log::debug!("Surface");
 
         #[cfg(not(target_os = "windows"))]
         let surface = instance.create_surface(window)?;
@@ -73,8 +74,6 @@ impl Renderer {
                 raw_window_handle: window.window_handle_any_thread()?.as_raw(),
             })
         }?;
-
-        log::debug!("Adapter");
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 compatible_surface: Some(&surface),
@@ -126,6 +125,8 @@ impl Renderer {
         );
         let main_camera_binding = camera_binder.bind(&device, &main_camera_buffer);
 
+        let texture_array_binder = SampledTextureArrayBinder::new(&device);
+
         let depth_format = wgpu::TextureFormat::Depth32Float;
         let depth_buffer = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth_buffer"),
@@ -149,10 +150,40 @@ impl Renderer {
             &device,
             &terrain_binder,
             &camera_binder,
+            &texture_array_binder,
             config.format,
             depth_format,
         )
         .await?;
+
+        let terrain_texture_array = device.create_texture_with_data(
+            &queue,
+            &wgpu::TextureDescriptor {
+                label: Some("terrain_texture_array"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 4,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::wgt::TextureDataOrder::LayerMajor,
+            &[
+                0x28, 0xaa, 0x00, 0xff, 127, 127, 255, 255, 0x62, 0x3b, 15, 0xff, 127, 127, 255, 255,
+            ],
+        );
+        let terrain_texture_array_view = terrain_texture_array.create_view(&Default::default());
+        let terrain_texture_sampler = device.create_sampler(&Default::default());
+        let terrain_texture_binding = texture_array_binder.bind(
+            &device,
+            &terrain_texture_array_view,
+            &terrain_texture_sampler,
+        );
 
         Ok(Self {
             surface,
@@ -174,6 +205,7 @@ impl Renderer {
             terrain_binder,
             terrain_pipeline,
             terrain_buffers: Vec::new(),
+            terrain_texture_binding,
         })
     }
 
@@ -231,6 +263,17 @@ impl Renderer {
         self.main_camera_buffer
             .update(&self.queue, |data| data[0].update(player_camera));
 
+        self.text_pipeline.update_text(
+            &self.font,
+            &format!(
+                "Debug Mode: {}",
+                if debug_mode_active { "ON" } else { "OFF" },
+            ),
+            &mut self.debug_text,
+            &self.device,
+            &self.queue,
+        );
+
         let view = frame.texture.create_view(&Default::default());
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -264,7 +307,7 @@ impl Renderer {
                         .debug(&mut main_pass, &self.main_camera_binding, buffer);
                 } else {
                     self.terrain_pipeline
-                        .draw(&mut main_pass, &self.main_camera_binding, buffer);
+                        .draw(&mut main_pass, &self.main_camera_binding, &self.terrain_texture_binding, buffer);
                 }
             }
         }
