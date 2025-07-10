@@ -1,5 +1,8 @@
 use std::{
-    path::{Path, PathBuf}, pin::Pin, sync::Arc, time::Duration
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::Arc,
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -21,7 +24,7 @@ pub enum AppEvent {
     SaveBinary(PathBuf, Vec<u8>, async_channel::Sender<anyhow::Result<()>>),
     LoadString(PathBuf, async_channel::Sender<anyhow::Result<String>>),
     LoadBinary(PathBuf, async_channel::Sender<anyhow::Result<Vec<u8>>>),
-    Task(Pin<Box<dyn Future<Output=anyhow::Result<()>> + Send + Sync + 'static>>),
+    Task(Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + Sync + 'static>>),
 }
 
 impl std::fmt::Debug for AppEvent {
@@ -125,8 +128,12 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
-            AppEvent::GameStarted(game) => {
+            AppEvent::GameStarted(mut game) => {
                 game.window.request_redraw();
+                game.resize(
+                    game.window.inner_size().width,
+                    game.window.inner_size().height,
+                );
                 self.game = Some(game);
             }
             AppEvent::Exit => event_loop.exit(),

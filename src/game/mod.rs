@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use web_time::{Duration, Instant};
 use winit::{
     dpi::PhysicalPosition,
     event::{MouseButton, MouseScrollDelta},
@@ -29,6 +30,10 @@ struct Settings {
     tile_size: u32,
     #[serde(default = "default_terrain_height")]
     terrain_height: f32,
+    #[serde(default = "default_terrain_size")]
+    terrain_size: u32,
+    #[serde(default = "default_chunk_radius")]
+    chunk_radius: u32,
 }
 
 impl Default for Settings {
@@ -39,6 +44,8 @@ impl Default for Settings {
             move_speed: default_move_speed(),
             tile_size: default_tile_size(),
             terrain_height: default_terrain_height(),
+            terrain_size: default_terrain_size(),
+            chunk_radius: default_chunk_radius(),
         }
     }
 }
@@ -47,12 +54,20 @@ fn default_terrain_height() -> f32 {
     50.0
 }
 
+fn default_move_speed() -> f32 {
+    20.0
+}
+
 fn default_tile_size() -> u32 {
     256
 }
 
-fn default_move_speed() -> f32 {
-    20.0
+fn default_terrain_size() -> u32 {
+    16
+}
+
+fn default_chunk_radius() -> u32 {
+    4
 }
 
 pub struct Game {
@@ -62,12 +77,13 @@ pub struct Game {
     settings: Settings,
     terrain_id: usize,
     camera_controller: CameraController,
-    game_play_timer: web_time::Instant,
-    frame_timer: web_time::Instant,
+    game_play_timer: Instant,
+    frame_timer: Instant,
     lmb_pressed: bool,
     num_frames: i32,
-    mpst: web_time::Duration,
+    tick_rate: Duration,
     debug_text: usize,
+    render_time: Duration,
 }
 
 impl Game {
@@ -76,6 +92,10 @@ impl Game {
             Ok(json) => serde_json::from_str(&json)?,
             Err(_) => Settings::default(),
         };
+
+        if settings.fullscreen {
+            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+        }
 
         log::debug!("Creating Renderer");
         let mut renderer = Renderer::new(app, window.clone()).await?;
@@ -95,21 +115,16 @@ impl Game {
         let world = World::new(
             width,
             height,
-            16,
+            settings.terrain_size,
             settings.tile_size,
             settings.terrain_height,
         );
 
         let terrain_id = renderer.buffer_terrain(&world.terrain);
 
-        renderer
-            .update_terrain(terrain_id, &world.terrain);
+        renderer.update_terrain(terrain_id, &world.terrain, settings.chunk_radius);
 
         let camera_controller = CameraController::new(settings.move_speed, 1.0);
-
-        if settings.fullscreen {
-            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
-        }
 
         Ok(Self {
             renderer,
@@ -117,32 +132,35 @@ impl Game {
             world,
             terrain_id,
             camera_controller,
-            game_play_timer: web_time::Instant::now(),
-            frame_timer: web_time::Instant::now(),
+            game_play_timer: Instant::now(),
+            frame_timer: Instant::now(),
             num_frames: 0,
             lmb_pressed: false,
-            mpst: web_time::Duration::ZERO,
+            tick_rate: Duration::ZERO,
             settings,
             debug_text,
+            render_time: Duration::ZERO,
         })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
+        log::info!("resize({width}, {height})");
         self.renderer.resize(width, height);
         self.world.resize(width, height);
     }
 
     pub fn render(&mut self, app: &AppController) {
+        let render_timer = Instant::now();
         self.window.request_redraw();
 
         let dt = self.game_play_timer.elapsed();
-        self.game_play_timer = web_time::Instant::now();
+        self.game_play_timer = Instant::now();
 
         self.num_frames += 1;
         if self.num_frames >= 100 {
-            self.mpst = self.frame_timer.elapsed() / 100;
+            self.tick_rate = self.frame_timer.elapsed() / 100;
             self.num_frames = 0;
-            self.frame_timer = web_time::Instant::now();
+            self.frame_timer = Instant::now();
         }
 
         self.camera_controller
@@ -154,13 +172,14 @@ impl Game {
         self.renderer.update_text(
             self.debug_text,
             &format!(
-                "Debug Mode: {}\nTick Rate: {:?}",
+                "Debug Mode: {}\nTick Rate: {:?}\nRender Time:{:?}",
                 if self.settings.debug_mode_active {
                     "ON"
                 } else {
                     "OFF"
                 },
-                self.mpst,
+                self.tick_rate,
+                self.render_time,
             ),
         );
 
@@ -170,6 +189,7 @@ impl Game {
             &self.world.player_camera,
             self.settings.debug_mode_active,
         );
+        self.render_time = render_timer.elapsed();
     }
 
     pub(crate) fn handle_close_requested(&mut self, app: &AppController) {

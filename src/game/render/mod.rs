@@ -49,6 +49,7 @@ pub struct Renderer {
     main_camera_buffer: BackedBuffer<CameraData>,
     main_camera_binding: bindings::CameraBinding,
     terrain_texture_binding: bindings::SampledTextureArrayBinding,
+    // time_query_set: wgpu::QuerySet,
 }
 
 impl Renderer {
@@ -77,6 +78,7 @@ impl Renderer {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 compatible_surface: Some(&surface),
+                power_preference: wgpu::PowerPreference::HighPerformance,
                 ..Default::default()
             })
             .await?;
@@ -184,6 +186,12 @@ impl Renderer {
             &terrain_texture_sampler,
         );
 
+        // let time_query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+        //     label: Some("time_query_set"),
+        //     ty: wgpu::QueryType::Timestamp,
+        //     count: 1,
+        // });
+
         Ok(Self {
             surface,
             device,
@@ -205,10 +213,15 @@ impl Renderer {
             terrain_pipeline,
             terrain_buffers: Vec::new(),
             terrain_texture_binding,
+            // time_query_set,
         })
     }
 
     pub(crate) fn resize(&mut self, width: u32, height: u32) {
+        if self.config.width == width && self.config.height == height {
+            return;
+        }
+
         self.is_surface_configured = true;
         self.config.width = width.max(1);
         self.config.height = height.max(1);
@@ -265,6 +278,7 @@ impl Renderer {
         let view = frame.texture.create_view(&Default::default());
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
+        // encoder.resolve_query_set(query_set, query_range, destination, destination_offset);
 
         {
             let mut main_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -343,11 +357,11 @@ impl Renderer {
         id
     }
 
-    pub fn update_terrain(&mut self, terrain_id: usize, terrain: &Terrain) {
+    pub fn update_terrain(&mut self, terrain_id: usize, terrain: &Terrain, chunk_radius: u32) {
         let buffer = &mut self.terrain_buffers[terrain_id];
         buffer.tiles.clear();
         let mut batch = buffer.tiles.batch(&self.device, &self.queue);
-        let range = 0..2;
+        let range = 0..chunk_radius;
         for tile in &terrain.tiles {
             if range.contains(&tile.id.0) && range.contains(&tile.id.1) {
                 let position = glam::vec2(
@@ -370,7 +384,13 @@ impl Renderer {
     }
 
     pub fn update_text(&mut self, text_id: usize, text: &str) {
-        self.text_pipeline.update_text(&self.font, text, &mut self.text_buffers[text_id], &self.device, &self.queue);
+        self.text_pipeline.update_text(
+            &self.font,
+            text,
+            &mut self.text_buffers[text_id],
+            &self.device,
+            &self.queue,
+        );
     }
 
     // pub fn update_terrain(&)

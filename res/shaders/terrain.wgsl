@@ -69,13 +69,6 @@ fn displace_terrain(
 
 @fragment
 fn debug(vs: VsOut) -> @location(0) vec4<f32> {
-    // return vec4(vs.debug, 1.0);
-    // return vec4(random_color(floor(vs.world_position.xz)), 1.0);
-    // return vec4(fract(vs.world_position), 1.0);
-    // return vec4(vec3(
-    //     fract(vs.world_position.xz / (terrain_data.terrain_height__tile_size.y - 1)),
-    //     vnoise2(vs.world_position.xz, terrain_data.terrain_height__tile_size.y - 1),
-    // ), 1.0);
     return vec4(
         random_color(
             floor(vs.world_position.xz / (terrain_data.terrain_height__tile_size.y - 1))
@@ -183,6 +176,7 @@ fn terrain_point(p: vec2<f32>, max_height: f32) -> vec3<f32> {
     return vec3<f32>(
         p.x,
         (fbm(p) * 0.5 + 0.5) * max_height,
+        // 0.0,
         p.y,
     );
 }
