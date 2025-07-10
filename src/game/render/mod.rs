@@ -38,7 +38,7 @@ pub struct Renderer {
     sampled_texture_binder: SampledTextureBinder,
     font: Font,
     text_pipeline: TextPipeline,
-    debug_text: font::TextBuffer,
+    text_buffers: Vec<font::TextBuffer>,
     ui_camera_buffer: BackedBuffer<CameraData>,
     ui_camera_binding: bindings::CameraBinding,
     terrain_binder: UniformBinder<terrain::TerrainData>,
@@ -109,8 +109,6 @@ impl Renderer {
         )
         .await?;
 
-        let debug_text = text_pipeline.buffer_text(&font, &device, "Hello, world!")?;
-
         let ui_camera_buffer = BackedBuffer::with_data(
             &device,
             vec![CameraData::IDENTITY],
@@ -144,7 +142,7 @@ impl Renderer {
         });
         let depth_buffer_view = depth_buffer.create_view(&Default::default());
 
-        let terrain_binder = UniformBinder::new(&device, wgpu::ShaderStages::VERTEX);
+        let terrain_binder = UniformBinder::new(&device, wgpu::ShaderStages::VERTEX_FRAGMENT);
         let terrain_pipeline = TerrainPipeline::new(
             app,
             &device,
@@ -174,7 +172,8 @@ impl Renderer {
             },
             wgpu::wgt::TextureDataOrder::LayerMajor,
             &[
-                0x28, 0xaa, 0x00, 0xff, 127, 127, 255, 255, 0x62, 0x3b, 15, 0xff, 127, 127, 255, 255,
+                0x28, 0xaa, 0x00, 0xff, 127, 127, 255, 255, 0x62, 0x3b, 15, 0xff, 127, 127, 255,
+                255,
             ],
         );
         let terrain_texture_array_view = terrain_texture_array.create_view(&Default::default());
@@ -195,7 +194,7 @@ impl Renderer {
             sampled_texture_binder,
             font,
             text_pipeline,
-            debug_text,
+            text_buffers: Vec::new(),
             ui_camera_buffer,
             ui_camera_binding,
             main_camera_buffer,
@@ -263,17 +262,6 @@ impl Renderer {
         self.main_camera_buffer
             .update(&self.queue, |data| data[0].update(player_camera));
 
-        self.text_pipeline.update_text(
-            &self.font,
-            &format!(
-                "Debug Mode: {}",
-                if debug_mode_active { "ON" } else { "OFF" },
-            ),
-            &mut self.debug_text,
-            &self.device,
-            &self.queue,
-        );
-
         let view = frame.texture.create_view(&Default::default());
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -306,8 +294,12 @@ impl Renderer {
                     self.terrain_pipeline
                         .debug(&mut main_pass, &self.main_camera_binding, buffer);
                 } else {
-                    self.terrain_pipeline
-                        .draw(&mut main_pass, &self.main_camera_binding, &self.terrain_texture_binding, buffer);
+                    self.terrain_pipeline.draw(
+                        &mut main_pass,
+                        &self.main_camera_binding,
+                        &self.terrain_texture_binding,
+                        buffer,
+                    );
                 }
             }
         }
@@ -328,8 +320,10 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
-            self.text_pipeline
-                .draw_text(&mut ui_pass, &self.debug_text, &self.ui_camera_binding);
+            for text in &self.text_buffers {
+                self.text_pipeline
+                    .draw_text(&mut ui_pass, text, &self.ui_camera_binding);
+            }
         }
 
         self.queue.submit([encoder.finish()]);
@@ -353,13 +347,30 @@ impl Renderer {
         let buffer = &mut self.terrain_buffers[terrain_id];
         buffer.tiles.clear();
         let mut batch = buffer.tiles.batch(&self.device, &self.queue);
-        for (i, _tile) in terrain.tiles.iter().enumerate() {
-            let position = glam::vec2(
-                (i as u32 % terrain.size * terrain.tile_size) as _,
-                (i as u32 / terrain.size * terrain.tile_size) as _,
-            );
-            batch.push(TileInstance { position });
+        let range = 0..2;
+        for tile in &terrain.tiles {
+            if range.contains(&tile.id.0) && range.contains(&tile.id.1) {
+                let position = glam::vec2(
+                    (tile.id.0 * (terrain.tile_size - 1)) as _,
+                    (tile.id.1 * (terrain.tile_size - 1)) as _,
+                );
+                batch.push(TileInstance { position });
+            }
         }
+    }
+
+    pub fn buffer_text(&mut self, text: &str) -> usize {
+        let id = self.text_buffers.len();
+        self.text_buffers.push(
+            self.text_pipeline
+                .buffer_text(&self.font, &self.device, text)
+                .unwrap(),
+        );
+        id
+    }
+
+    pub fn update_text(&mut self, text_id: usize, text: &str) {
+        self.text_pipeline.update_text(&self.font, text, &mut self.text_buffers[text_id], &self.device, &self.queue);
     }
 
     // pub fn update_terrain(&)

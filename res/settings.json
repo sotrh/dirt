@@ -1,0 +1,7 @@
+{
+  "debug_mode_active": false,
+  "fullscreen": true,
+  "move_speed": 20.0,
+  "tile_size": 256,
+  "terrain_height": 50.0
+}

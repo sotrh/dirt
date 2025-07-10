@@ -14,7 +14,7 @@ impl World {
         let ui_camera = Camera2d::new(width as f32, height as f32);
 
         // let center = (terrain_size * tile_size) as f32 * 0.5;
-        let center = 128.0;
+        let center = tile_size as f32 * 0.5;
         let player_camera = PerspectiveCamera::new(
             glam::vec3(center, max_height, center),
             -std::f32::consts::FRAC_PI_2,

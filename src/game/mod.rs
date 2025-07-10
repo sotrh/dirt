@@ -1,6 +1,12 @@
 use std::sync::Arc;
 
-use winit::{dpi::PhysicalPosition, event::MouseButton, keyboard::KeyCode, window::{Fullscreen, Window}};
+use serde::{Deserialize, Serialize};
+use winit::{
+    dpi::PhysicalPosition,
+    event::{MouseButton, MouseScrollDelta},
+    keyboard::KeyCode,
+    window::{Fullscreen, Window},
+};
 
 use crate::{
     app::AppController,
@@ -13,30 +19,97 @@ use crate::{
 mod render;
 mod world;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Settings {
+    debug_mode_active: bool,
+    fullscreen: bool,
+    #[serde(default = "default_move_speed")]
+    move_speed: f32,
+    #[serde(default = "default_tile_size")]
+    tile_size: u32,
+    #[serde(default = "default_terrain_height")]
+    terrain_height: f32,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            debug_mode_active: false,
+            fullscreen: false,
+            move_speed: default_move_speed(),
+            tile_size: default_tile_size(),
+            terrain_height: default_terrain_height(),
+        }
+    }
+}
+
+fn default_terrain_height() -> f32 {
+    50.0
+}
+
+fn default_tile_size() -> u32 {
+    256
+}
+
+fn default_move_speed() -> f32 {
+    20.0
+}
+
 pub struct Game {
     renderer: Renderer,
     world: World,
     pub(crate) window: Arc<Window>,
+    settings: Settings,
     terrain_id: usize,
     camera_controller: CameraController,
     game_play_timer: web_time::Instant,
+    frame_timer: web_time::Instant,
     lmb_pressed: bool,
-    debug_mode_active: bool,
+    num_frames: i32,
+    mpst: web_time::Duration,
+    debug_text: usize,
 }
 
 impl Game {
     pub async fn new(app: &AppController, window: Arc<Window>) -> anyhow::Result<Self> {
+        let settings = match app.load_string("settings.json").await {
+            Ok(json) => serde_json::from_str(&json)?,
+            Err(_) => Settings::default(),
+        };
+
         log::debug!("Creating Renderer");
         let mut renderer = Renderer::new(app, window.clone()).await?;
+
+        let debug_text = renderer.buffer_text(&format!(
+            "Debug Mode: {}\nTickRate: ---",
+            if settings.debug_mode_active {
+                "ON"
+            } else {
+                "OFF"
+            },
+        ));
 
         let width = window.inner_size().width.max(1);
         let height = window.inner_size().height.max(1);
 
-        let world = World::new(width, height, 16, 256, 50.0);
+        let world = World::new(
+            width,
+            height,
+            16,
+            settings.tile_size,
+            settings.terrain_height,
+        );
 
         let terrain_id = renderer.buffer_terrain(&world.terrain);
 
-        let camera_controller = CameraController::new(5.0, 1.0);
+        renderer
+            .update_terrain(terrain_id, &world.terrain);
+
+        let camera_controller = CameraController::new(settings.move_speed, 1.0);
+
+        if settings.fullscreen {
+            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+        }
 
         Ok(Self {
             renderer,
@@ -45,8 +118,12 @@ impl Game {
             terrain_id,
             camera_controller,
             game_play_timer: web_time::Instant::now(),
+            frame_timer: web_time::Instant::now(),
+            num_frames: 0,
             lmb_pressed: false,
-            debug_mode_active: false,
+            mpst: web_time::Duration::ZERO,
+            settings,
+            debug_text,
         })
     }
 
@@ -61,25 +138,51 @@ impl Game {
         let dt = self.game_play_timer.elapsed();
         self.game_play_timer = web_time::Instant::now();
 
+        self.num_frames += 1;
+        if self.num_frames >= 100 {
+            self.mpst = self.frame_timer.elapsed() / 100;
+            self.num_frames = 0;
+            self.frame_timer = web_time::Instant::now();
+        }
+
         self.camera_controller
             .update_camera(&mut self.world.player_camera, dt);
 
-        self.renderer
-            .update_terrain(self.terrain_id, &self.world.terrain);
+        // self.renderer
+        //     .update_terrain(self.terrain_id, &self.world.terrain);
 
-        self.renderer
-            .render(app, &self.world.ui_camera, &self.world.player_camera, self.debug_mode_active);
+        self.renderer.update_text(
+            self.debug_text,
+            &format!(
+                "Debug Mode: {}\nTick Rate: {:?}",
+                if self.settings.debug_mode_active {
+                    "ON"
+                } else {
+                    "OFF"
+                },
+                self.mpst,
+            ),
+        );
+
+        self.renderer.render(
+            app,
+            &self.world.ui_camera,
+            &self.world.player_camera,
+            self.settings.debug_mode_active,
+        );
     }
 
     pub(crate) fn handle_close_requested(&mut self, app: &AppController) {
-        app.exit();
+        self.exit(app);
     }
 
     pub(crate) fn handle_mouse_motion(&mut self, dx: f32, dy: f32) {
         if self.lmb_pressed {
             self.camera_controller.process_mouse(dx, dy);
             let size = self.window.inner_size();
-            self.window.set_cursor_position(PhysicalPosition::new(size.width / 2, size.height / 2)).unwrap();
+            self.window
+                .set_cursor_position(PhysicalPosition::new(size.width / 2, size.height / 2))
+                .unwrap();
         }
     }
 
@@ -89,9 +192,11 @@ impl Game {
         }
 
         match (key, is_pressed) {
-            (KeyCode::Escape, _) => app.exit(),
+            (KeyCode::Escape, _) => self.exit(app),
             (KeyCode::KeyF, true) => self.toggle_fullscreen(),
-            (KeyCode::Digit0, true) => self.debug_mode_active = !self.debug_mode_active,
+            (KeyCode::Digit0, true) => {
+                self.settings.debug_mode_active = !self.settings.debug_mode_active
+            }
             _ => {}
         }
     }
@@ -102,24 +207,40 @@ impl Game {
         }
     }
 
-    pub(crate) fn handle_mouse_button(
-        &mut self,
-        button: MouseButton,
-        is_pressed: bool,
-    ) {
+    pub(crate) fn handle_mouse_button(&mut self, button: MouseButton, is_pressed: bool) {
         match button {
             MouseButton::Left => {
                 self.lmb_pressed = is_pressed;
                 self.window.set_cursor_visible(!is_pressed);
-            },
+            }
             _ => {}
         }
     }
-    
-    fn toggle_fullscreen(&self) {
+
+    pub(crate) fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
+        self.camera_controller.process_mouse_scroll(&delta);
+    }
+
+    fn toggle_fullscreen(&mut self) {
         match self.window.fullscreen() {
             Some(_) => self.window.set_fullscreen(None),
-            None => self.window.set_fullscreen(Some(Fullscreen::Borderless(None))),
+            None => self
+                .window
+                .set_fullscreen(Some(Fullscreen::Borderless(None))),
         }
+        self.settings.fullscreen = self.window.fullscreen().is_some();
+    }
+
+    fn exit(&mut self, app: &AppController) {
+        app.spawn_task({
+            let settings = self.settings.clone();
+            let app = app.clone();
+            async move {
+                let data = serde_json::to_string_pretty(&settings)?;
+                app.save_string("settings.json", data).await?;
+                app.exit();
+                Ok(())
+            }
+        });
     }
 }

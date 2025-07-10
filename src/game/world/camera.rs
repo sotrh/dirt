@@ -113,6 +113,7 @@ pub struct CameraController {
     scroll: f32,
     speed: f32,
     sensitivity: f32,
+    sprint_pressed: bool,
 }
 
 impl CameraController {
@@ -129,6 +130,7 @@ impl CameraController {
             scroll: 0.0,
             speed,
             sensitivity,
+            sprint_pressed: false,
         }
     }
 
@@ -159,6 +161,10 @@ impl CameraController {
                 self.amount_down = amount;
                 true
             }
+            KeyCode::ControlLeft | KeyCode::ControlRight => {
+                self.sprint_pressed = pressed;
+                true
+            }
             _ => false,
         }
     }
@@ -170,7 +176,7 @@ impl CameraController {
 
     #[allow(unused)]
     pub fn process_mouse_scroll(&mut self, delta: &MouseScrollDelta) {
-        self.scroll = match delta {
+        self.scroll += match delta {
             // I'm assuming a line is about 100 pixels
             MouseScrollDelta::LineDelta(_, scroll) => -scroll * 0.5,
             MouseScrollDelta::PixelDelta(PhysicalPosition { y: scroll, .. }) => -*scroll as f32,
@@ -180,26 +186,21 @@ impl CameraController {
     pub fn update_camera(&mut self, camera: &mut PerspectiveCamera, dt: web_time::Duration) {
         let dt = dt.as_secs_f32();
 
+        let mut speed = self.speed;
+        if self.sprint_pressed {
+            speed *= 4.0;
+        }
+
         // Move forward/backward and left/right
         let (yaw_sin, yaw_cos) = camera.yaw.sin_cos();
         let forward = glam::Vec3::new(yaw_cos, 0.0, yaw_sin).normalize();
         let right = glam::Vec3::new(-yaw_sin, 0.0, yaw_cos).normalize();
-        camera.position += forward * (self.amount_forward - self.amount_backward) * self.speed * dt;
-        camera.position += right * (self.amount_right - self.amount_left) * self.speed * dt;
-
-        // Move in/out (aka. "zoom")
-        // Note: this isn't an actual zoom. The camera's position
-        // changes when zooming. I've added this to make it easier
-        // to get closer to an object you want to focus on.
-        let (pitch_sin, pitch_cos) = camera.pitch.sin_cos();
-        let scrollward =
-            glam::Vec3::new(pitch_cos * yaw_cos, pitch_sin, pitch_cos * yaw_sin).normalize();
-        camera.position += scrollward * self.scroll * self.speed * self.sensitivity * dt;
-        self.scroll = 0.0;
+        camera.position += forward * (self.amount_forward - self.amount_backward) * speed * dt;
+        camera.position += right * (self.amount_right - self.amount_left) * speed * dt;
 
         // Move up/down. Since we don't use roll, we can just
         // modify the y coordinate directly.
-        camera.position.y += (self.amount_up - self.amount_down) * self.speed * dt;
+        camera.position.y += (self.amount_up - self.amount_down) * speed * dt;
 
         // Rotate
         camera.yaw += self.rotate_horizontal * self.sensitivity * dt;

@@ -36,6 +36,7 @@ struct VsOut {
     @builtin(position)
     frag_position: vec4<f32>,
     @location(0)
+    // @interpolate(flat)
     debug: vec3<f32>,
     @location(1)
     world_position: vec3<f32>,
@@ -49,14 +50,14 @@ fn displace_terrain(
    instance: TileInstance,
 ) -> VsOut {
     let i = f32(index);
-    let x = i % terrain_data.terrain_height__tile_size.y + instance.tile_offset.x;
-    let z = i / terrain_data.terrain_height__tile_size.y + instance.tile_offset.y;
+    let num_vertices = terrain_data.terrain_height__tile_size.y;
+    let x = floor(i % num_vertices) + instance.tile_offset.x;
+    let z = floor(i / num_vertices) + instance.tile_offset.y;
 
-    let v = terrain_vertex(vec2(x, z));
+    let v = terrain_vertex(vec2(x, z), terrain_data.terrain_height__tile_size.x);
 
     let frag_position = camera.view_proj * vec4(v.position, 1.0);
-    let f = v.position.y / terrain_data.terrain_height__tile_size.x;
-    let debug = v.normal.xyz * 0.5 + 0.5;
+    let debug = random_color(vec2(i, 0.0));
 
     return VsOut(
         frag_position,
@@ -68,7 +69,19 @@ fn displace_terrain(
 
 @fragment
 fn debug(vs: VsOut) -> @location(0) vec4<f32> {
-    return vec4(vs.debug, 1.0);
+    // return vec4(vs.debug, 1.0);
+    // return vec4(random_color(floor(vs.world_position.xz)), 1.0);
+    // return vec4(fract(vs.world_position), 1.0);
+    // return vec4(vec3(
+    //     fract(vs.world_position.xz / (terrain_data.terrain_height__tile_size.y - 1)),
+    //     vnoise2(vs.world_position.xz, terrain_data.terrain_height__tile_size.y - 1),
+    // ), 1.0);
+    return vec4(
+        random_color(
+            floor(vs.world_position.xz / (terrain_data.terrain_height__tile_size.y - 1))
+        ) * vnoise2(vs.world_position.xz, terrain_data.terrain_height__tile_size.y - 1),
+        1,
+    );
 }
 
 @fragment
@@ -130,9 +143,6 @@ fn triplanar_shaded(vs: VsOut) -> @location(0) vec4<f32> {
     let specular_color = specular_strength * vec3(1.0, 1.0, 1.0);
 
     let result = (ambient_color + diffuse_color + specular_color) * albedo.rgb;
-    // let result = (ambient_color + diffuse_color) * albedo.rgb;
-    // let result = albedo.rgb;
-    // let result = blend;
 
     return vec4(result, 1.0);
 }
@@ -153,13 +163,13 @@ fn to_linear(srgb: vec3<f32>) -> vec3<f32> {
     return select(higher, lower, cutoff);
 }
 
-fn terrain_vertex(p: vec2<f32>) -> TerrainVertex {
-    let v = terrain_point(p);
+fn terrain_vertex(p: vec2<f32>, max_height: f32) -> TerrainVertex {
+    let v = terrain_point(p, max_height);
 
-    let tpx = terrain_point(p + vec2<f32>(0.1, 0.0)) - v;
-    let tnx = terrain_point(p + vec2<f32>(-0.1, 0.0)) - v;
-    let tpz = terrain_point(p + vec2<f32>(0.0, 0.1)) - v;
-    let tnz = terrain_point(p + vec2<f32>(0.0, -0.1)) - v;
+    let tpx = terrain_point(p + vec2<f32>(0.1, 0.0), max_height) - v;
+    let tnx = terrain_point(p + vec2<f32>(-0.1, 0.0), max_height) - v;
+    let tpz = terrain_point(p + vec2<f32>(0.0, 0.1), max_height) - v;
+    let tnz = terrain_point(p + vec2<f32>(0.0, -0.1), max_height) - v;
 
     let pn = normalize(cross(tpz, tpx));
     let nn = normalize(cross(tnz, tnx));
@@ -169,10 +179,10 @@ fn terrain_vertex(p: vec2<f32>) -> TerrainVertex {
     return TerrainVertex(v, n);
 }
 
-fn terrain_point(p: vec2<f32>) -> vec3<f32> {
+fn terrain_point(p: vec2<f32>, max_height: f32) -> vec3<f32> {
     return vec3<f32>(
         p.x,
-        (fbm(p) * 0.5 + 0.5) * terrain_data.terrain_height__tile_size.x,
+        (fbm(p) * 0.5 + 0.5) * max_height,
         p.y,
     );
 }
@@ -194,6 +204,66 @@ fn fbm(p: vec2<f32>) -> f32 {
     }
 
     return v;
+}
+
+fn vnoise2(p: vec2<f32>, size: f32) -> f32 {
+    let g = floor(p / size);
+    // let gf = g;
+    var d = 100000000.0;
+    for (var z = -1 ; z < 2; z++) {
+        for (var x = -1; x < 2; x++) {
+            let gi = g + vec2(f32(x), f32(z));
+            let offset = vec2(
+                snoise2(gi),
+                snoise2(gi + vec2(203.0, 8912.2)),
+            ) * size * 0.5;
+            let pi = gi * size + offset;
+            let di = distance(pi, p);
+            // gf = select(gf, gi);
+            d = min(d, di);
+        }
+    }
+
+    return d / size;
+}
+
+fn hash(p: vec2<f32>) -> f32 {
+    let p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
+    let p3_dot = dot(p3, vec3<f32>(p3.y, p3.z, p3.x) + 19.19);
+    return fract((p3.x + p3.y) * p3_dot);
+}
+
+fn random_color(p: vec2<f32>) -> vec3<f32> {
+    let hue = hash(p) * 360.0;
+    let saturation = 1.0;
+    let lightness = 0.5;
+
+    return hsl_to_rgb(hue, saturation, lightness);
+}
+
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> vec3<f32> {
+    let h_norm = h / 360.0;
+    let c = (1.0 - abs(2.0 * l - 1.0)) * s;
+    let x = c * (1.0 - abs(((h_norm * 6.0) % 2.0) - 1.0));
+    let m = l - c / 2.0;
+    
+    var rgb = vec3<f32>(0.0);
+    
+    if (h_norm < 1.0 / 6.0) {
+        rgb = vec3<f32>(c, x, 0.0);
+    } else if (h_norm < 2.0 / 6.0) {
+        rgb = vec3<f32>(x, c, 0.0);
+    } else if (h_norm < 3.0 / 6.0) {
+        rgb = vec3<f32>(0.0, c, x);
+    } else if (h_norm < 4.0 / 6.0) {
+        rgb = vec3<f32>(0.0, x, c);
+    } else if (h_norm < 5.0 / 6.0) {
+        rgb = vec3<f32>(x, 0.0, c);
+    } else {
+        rgb = vec3<f32>(c, 0.0, x);
+    }
+    
+    return rgb + vec3<f32>(m);
 }
 
 // https://gist.github.com/munrocket/236ed5ba7e409b8bdf1ff6eca5dcdc39

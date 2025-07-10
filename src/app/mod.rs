@@ -1,6 +1,5 @@
 use std::{
-    path::{Path, PathBuf},
-    sync::Arc, time::Duration,
+    path::{Path, PathBuf}, pin::Pin, sync::Arc, time::Duration
 };
 
 use anyhow::Context;
@@ -18,8 +17,11 @@ use crate::game::Game;
 pub enum AppEvent {
     GameStarted(Game),
     Exit,
+    SaveString(PathBuf, String, async_channel::Sender<anyhow::Result<()>>),
+    SaveBinary(PathBuf, Vec<u8>, async_channel::Sender<anyhow::Result<()>>),
     LoadString(PathBuf, async_channel::Sender<anyhow::Result<String>>),
     LoadBinary(PathBuf, async_channel::Sender<anyhow::Result<Vec<u8>>>),
+    Task(Pin<Box<dyn Future<Output=anyhow::Result<()>> + Send + Sync + 'static>>),
 }
 
 impl std::fmt::Debug for AppEvent {
@@ -27,6 +29,7 @@ impl std::fmt::Debug for AppEvent {
         match self {
             AppEvent::GameStarted(_) => f.debug_tuple("GameStarted").field(&"..").finish(),
             AppEvent::Exit => f.write_str("Exit"),
+            AppEvent::Task(_) => f.write_str("Task(..)"),
             AppEvent::LoadString(path_buf, ..) => f
                 .debug_tuple("LoadString")
                 .field(path_buf)
@@ -36,6 +39,18 @@ impl std::fmt::Debug for AppEvent {
                 .debug_tuple("LoadBinary")
                 .field(path_buf)
                 .field(&"..")
+                .finish(),
+            AppEvent::SaveString(path_buf, data, sender) => f
+                .debug_tuple("SaveString")
+                .field(path_buf)
+                .field(data)
+                .field(sender)
+                .finish(),
+            AppEvent::SaveBinary(path_buf, items, sender) => f
+                .debug_tuple("SaveBinary")
+                .field(path_buf)
+                .field(items)
+                .field(sender)
                 .finish(),
         }
     }
@@ -101,9 +116,9 @@ impl ApplicationHandler<AppEvent> for App {
             DeviceEvent::MouseMotion { delta: (dx, dy) } => {
                 game.handle_mouse_motion(dx as _, dy as _);
             }
-            // DeviceEvent::MouseWheel { delta } => {
-            //     // game.handle_m
-            // }
+            DeviceEvent::MouseWheel { delta } => {
+                game.handle_mouse_scroll(delta);
+            }
             _ => {}
         }
     }
@@ -113,10 +128,12 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::GameStarted(game) => {
                 game.window.request_redraw();
                 self.game = Some(game);
-            },
+            }
             AppEvent::Exit => event_loop.exit(),
+            AppEvent::Task(task) => {
+                self.spawn_task(task);
+            }
             AppEvent::LoadString(path, sender) => {
-                log::debug!("LoadString({path:?}, ..)");
                 self.spawn_task(async move {
                     sender
                         .send(
@@ -124,12 +141,12 @@ impl ApplicationHandler<AppEvent> for App {
                                 format!("Could not load string: {}", path.display())
                             }),
                         )
-                        .await.unwrap();
+                        .await
+                        .unwrap();
                     Ok(())
                 });
             }
             AppEvent::LoadBinary(path, sender) => {
-                log::debug!("LoadBinary({path:?}, ..)");
                 self.spawn_task(async move {
                     sender
                         .send(
@@ -137,7 +154,32 @@ impl ApplicationHandler<AppEvent> for App {
                                 format!("Could not load string: {}", path.display())
                             }),
                         )
-                        .await.unwrap();
+                        .await
+                        .unwrap();
+                    Ok(())
+                });
+            }
+            AppEvent::SaveString(path, contents, sender) => {
+                self.spawn_task(async move {
+                    log::debug!("SaveString");
+                    sender
+                        .send(async_fs::write(&path, &contents).await.with_context(|| {
+                            format!("Could not save string: {} to {}", contents, path.display())
+                        }))
+                        .await
+                        .unwrap();
+                    Ok(())
+                });
+            }
+            AppEvent::SaveBinary(path, contents, sender) => {
+                log::debug!("SaveBinary");
+                self.spawn_task(async move {
+                    sender
+                        .send(async_fs::write(&path, &contents).await.with_context(|| {
+                            format!("Could not save data: {:?} to {}", &contents, path.display())
+                        }))
+                        .await
+                        .unwrap();
                     Ok(())
                 });
             }
@@ -172,7 +214,9 @@ impl ApplicationHandler<AppEvent> for App {
             } => {
                 game.handle_key(&self.controller, key, state.is_pressed());
             }
-            WindowEvent::MouseInput { state, button, .. } => game.handle_mouse_button(button, state.is_pressed()),
+            WindowEvent::MouseInput { state, button, .. } => {
+                game.handle_mouse_button(button, state.is_pressed())
+            }
             WindowEvent::RedrawRequested => game.render(app),
             WindowEvent::Resized(size) => game.resize(size.width, size.height),
             _ => {}
@@ -210,6 +254,24 @@ pub struct AppController {
 impl AppController {
     pub fn exit(&self) {
         self.proxy.send_event(AppEvent::Exit).unwrap();
+    }
+
+    pub fn spawn_task<Fut>(&self, task: Fut)
+    where
+        Fut: Future<Output = anyhow::Result<()>> + Send + Sync + 'static,
+    {
+        self.proxy
+            .send_event(AppEvent::Task(Box::pin(task)))
+            .unwrap();
+    }
+
+    pub async fn save_string(&self, path: impl AsRef<Path>, data: String) -> anyhow::Result<()> {
+        let path = self.res_dir.join(path);
+        let (sender, receiver) = bounded(1);
+        self.proxy
+            .send_event(AppEvent::SaveString(path, data, sender))
+            .unwrap();
+        receiver.recv().await?
     }
 
     pub(crate) async fn load_string(&self, path: impl AsRef<Path>) -> anyhow::Result<String> {

@@ -3,7 +3,10 @@ use bytemuck::{Pod, Zeroable};
 use crate::{
     app::AppController,
     game::render::{
-        bindings::{CameraBinder, CameraBinding, SampledTextureArrayBinder, SampledTextureArrayBinding, UniformBinder, UniformBinding},
+        bindings::{
+            CameraBinder, CameraBinding, SampledTextureArrayBinder, SampledTextureArrayBinding,
+            UniformBinder, UniformBinding,
+        },
         buffer::BackedBuffer,
         utils::RenderPipelineBuilder,
     },
@@ -97,7 +100,11 @@ impl TerrainPipeline {
         depth_format: wgpu::TextureFormat,
     ) -> anyhow::Result<Self> {
         let triplanar_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            bind_group_layouts: &[uniform_binder.layout(), camera_binder.layout(), texture_binder.layout()],
+            bind_group_layouts: &[
+                uniform_binder.layout(),
+                camera_binder.layout(),
+                texture_binder.layout(),
+            ],
             ..Default::default()
         });
 
@@ -156,7 +163,10 @@ impl TerrainPipeline {
             })
             .build(device)?;
 
-        Ok(Self { triplanar_pipeline, debug_pipeline })
+        Ok(Self {
+            triplanar_pipeline,
+            debug_pipeline,
+        })
     }
 
     pub fn draw<'a, 'b: 'a>(
