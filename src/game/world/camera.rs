@@ -44,12 +44,12 @@ const SAFE_FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2 - 0.0001;
 #[derive(Debug)]
 pub struct PerspectiveCamera {
     pub position: glam::Vec3,
-    yaw: f32,
-    pitch: f32,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub fovy: f32,
+    pub znear: f32,
+    pub zfar: f32,
     aspect: f32,
-    fovy: f32,
-    znear: f32,
-    zfar: f32,
 }
 
 impl PerspectiveCamera {

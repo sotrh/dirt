@@ -13,12 +13,11 @@ impl World {
     pub(crate) fn new(width: u32, height: u32, terrain_size: u32, tile_size: u32, max_height: f32) -> Self {
         let ui_camera = Camera2d::new(width as f32, height as f32);
 
-        // let center = (terrain_size * tile_size) as f32 * 0.5;
         let center = tile_size as f32 * 0.5;
         let player_camera = PerspectiveCamera::new(
             glam::vec3(center, max_height, center),
-            -std::f32::consts::FRAC_PI_2,
-            -std::f32::consts::FRAC_PI_8,
+            std::f32::consts::FRAC_PI_4,
+            -0.1,
             width,
             height,
             std::f32::consts::FRAC_PI_4,

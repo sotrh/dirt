@@ -69,10 +69,10 @@ fn displace_terrain(
 
 @fragment
 fn debug(vs: VsOut) -> @location(0) vec4<f32> {
+    let v = terrain_vertex(vs.world_position.xz, terrain_data.terrain_height__tile_size.x);
     return vec4(
-        random_color(
-            floor(vs.world_position.xz / (terrain_data.terrain_height__tile_size.y - 1))
-        ) * vnoise2(vs.world_position.xz, terrain_data.terrain_height__tile_size.y - 1),
+        vec3(v.normal.x),
+        // to_srgb(v.normal),
         1,
     );
 }
@@ -80,7 +80,8 @@ fn debug(vs: VsOut) -> @location(0) vec4<f32> {
 @fragment
 fn triplanar_shaded(vs: VsOut) -> @location(0) vec4<f32> {
     // Adapted from https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader-10bf39dca05a
-    var vs_world_normal = normalize(vs.world_normal);
+    let v = terrain_vertex(vs.world_position.xz, terrain_data.terrain_height__tile_size.x);
+    var vs_world_normal = v.normal;
 
     let cos_theta = max(dot(vs_world_normal, vec3(0.0, 1.0, 0.0)), 0.0);
     let layer = select(2u, 0u, cos_theta > 0.8);
@@ -159,10 +160,11 @@ fn to_linear(srgb: vec3<f32>) -> vec3<f32> {
 fn terrain_vertex(p: vec2<f32>, max_height: f32) -> TerrainVertex {
     let v = terrain_point(p, max_height);
 
-    let tpx = terrain_point(p + vec2<f32>(0.1, 0.0), max_height) - v;
-    let tnx = terrain_point(p + vec2<f32>(-0.1, 0.0), max_height) - v;
-    let tpz = terrain_point(p + vec2<f32>(0.0, 0.1), max_height) - v;
-    let tnz = terrain_point(p + vec2<f32>(0.0, -0.1), max_height) - v;
+    let tpx = terrain_point(p + vec2<f32>(0.01, 0.0), max_height) - v;
+    let tnx = terrain_point(p + vec2<f32>(-0.01, 0.0), max_height) - v;
+
+    let tpz = terrain_point(p + vec2<f32>(0.0, 0.01), max_height) - v;
+    let tnz = terrain_point(p + vec2<f32>(0.0, -0.01), max_height) - v;
 
     let pn = normalize(cross(tpz, tpx));
     let nn = normalize(cross(tnz, tnx));
@@ -173,17 +175,21 @@ fn terrain_vertex(p: vec2<f32>, max_height: f32) -> TerrainVertex {
 }
 
 fn terrain_point(p: vec2<f32>, max_height: f32) -> vec3<f32> {
+    let y0 = fbm(p) * max_height;
+    let y1 = smooth_voronoi(p * 0.01 + snoise2(p * 0.01) * 0.1) * max_height;
+    // let y1 = smooth_voronoi(p * 0.01) * max_height;
     return vec3<f32>(
         p.x,
-        (fbm(p) * 0.5 + 0.5) * max_height,
-        // 0.0,
+        // mix(y0, y1, 1.0),
+        mix(y0, y1, snoise2(p * 0.001) * 0.5 + 0.5),
+        // mix(y0, y1, smooth_voronoi(p * 0.01)),
         p.y,
     );
 }
 
 fn fbm(p: vec2<f32>) -> f32 {
     // TODO: add this to uniforms
-    let NUM_OCTAVES: u32 = 5u;
+    let NUM_OCTAVES: u32 = 4u;
     var x = p * 0.01;
     var v = 0.0;
     var a = 0.5;
@@ -200,25 +206,22 @@ fn fbm(p: vec2<f32>) -> f32 {
     return v;
 }
 
-fn vnoise2(p: vec2<f32>, size: f32) -> f32 {
-    let g = floor(p / size);
-    // let gf = g;
-    var d = 100000000.0;
-    for (var z = -1 ; z < 2; z++) {
-        for (var x = -1; x < 2; x++) {
-            let gi = g + vec2(f32(x), f32(z));
-            let offset = vec2(
-                snoise2(gi),
-                snoise2(gi + vec2(203.0, 8912.2)),
-            ) * size * 0.5;
-            let pi = gi * size + offset;
-            let di = distance(pi, p);
-            // gf = select(gf, gi);
-            d = min(d, di);
+fn smooth_voronoi(x: vec2<f32>) -> f32 {
+    let p = floor(x);
+    let f = fract(x);
+
+    var res = 0.0;
+    for (var j = -1; j <= 1; j++) {
+        for (var i = -1; i <= 1; i++) {
+            let b = vec2(f32(i), f32(j));
+            let r = vec2(b) - f + hash(p + b);
+            let d = dot(r, r);
+
+            res += 1.0 / pow(d, 8.0);
         }
     }
 
-    return d / size;
+    return pow(1.0 / res, 1.0 / 16.0);
 }
 
 fn hash(p: vec2<f32>) -> f32 {

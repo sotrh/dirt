@@ -100,15 +100,6 @@ impl Game {
         log::debug!("Creating Renderer");
         let mut renderer = Renderer::new(app, window.clone()).await?;
 
-        let debug_text = renderer.buffer_text(&format!(
-            "Debug Mode: {}\nTickRate: ---",
-            if settings.debug_mode_active {
-                "ON"
-            } else {
-                "OFF"
-            },
-        ));
-
         let width = window.inner_size().width.max(1);
         let height = window.inner_size().height.max(1);
 
@@ -119,6 +110,20 @@ impl Game {
             settings.tile_size,
             settings.terrain_height,
         );
+
+        let debug_text = renderer.buffer_text(&format!(
+            "Debug Mode: {}\nTick Rate: --\n({:.2}, {:.2}, {:.2})\n({:.2}, {:.2})",
+            if settings.debug_mode_active {
+                "ON"
+            } else {
+                "OFF"
+            },
+            world.player_camera.position.x,
+            world.player_camera.position.y,
+            world.player_camera.position.z,
+            world.player_camera.yaw,
+            world.player_camera.pitch,
+        ));
 
         let terrain_id = renderer.buffer_terrain(&world.terrain);
 
@@ -172,14 +177,18 @@ impl Game {
         self.renderer.update_text(
             self.debug_text,
             &format!(
-                "Debug Mode: {}\nTick Rate: {:?}\nRender Time:{:?}",
+                "Debug Mode: {}\nTick Rate: {:?}\n({:.2}, {:.2}, {:.2})\n({:.2}, {:.2})",
                 if self.settings.debug_mode_active {
                     "ON"
                 } else {
                     "OFF"
                 },
                 self.tick_rate,
-                self.render_time,
+                self.world.player_camera.position.x,
+                self.world.player_camera.position.y,
+                self.world.player_camera.position.z,
+                self.world.player_camera.yaw,
+                self.world.player_camera.pitch,
             ),
         );
 

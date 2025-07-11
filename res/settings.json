@@ -1,9 +1,9 @@
 {
-  "debug_mode_active": true,
+  "debug_mode_active": false,
   "fullscreen": true,
   "move_speed": 20.0,
-  "tile_size": 128,
+  "tile_size": 32,
   "terrain_height": 50.0,
-  "terrain_size": 16,
+  "terrain_size": 32,
   "chunk_radius": 256
 }
