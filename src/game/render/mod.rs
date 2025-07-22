@@ -350,7 +350,9 @@ impl Renderer {
             &self.device,
             &self.terrain_binder,
             terrain.tile_size,
-            terrain.max_height,
+            terrain.mountain_height,
+            terrain.dune_height,
+            terrain.spire_height,
         );
         self.terrain_buffers.push(buffer);
 

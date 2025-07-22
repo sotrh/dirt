@@ -104,12 +104,14 @@ impl Game {
         let height = window.inner_size().height.max(1);
 
         let world = World::new(
+            app,
             width,
             height,
             settings.terrain_size,
             settings.tile_size,
             settings.terrain_height,
-        );
+        )
+        .await;
 
         let debug_text = renderer.buffer_text(&format!(
             "Debug Mode: {}\nTick Rate: --\n({:.2}, {:.2}, {:.2})\n({:.2}, {:.2})",
@@ -263,10 +265,17 @@ impl Game {
     fn exit(&mut self, app: &AppController) {
         app.spawn_task({
             let settings = self.settings.clone();
+            let terrain = self.world.terrain.clone();
             let app = app.clone();
             async move {
-                let data = serde_json::to_string_pretty(&settings)?;
-                app.save_string("settings.json", data).await?;
+                app.save_string("settings.json", serde_json::to_string_pretty(&settings)?)
+                    .await?;
+                app.save_string(
+                    "terrains/default.json",
+                    serde_json::to_string_pretty(&terrain)?,
+                )
+                .await?;
+
                 app.exit();
                 Ok(())
             }

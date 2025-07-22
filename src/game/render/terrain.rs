@@ -31,8 +31,10 @@ impl TileInstance {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct TerrainData {
-    terrain_height: f32,
     tile_size: f32,
+    mountain_height: f32,
+    dune_height: f32,
+    spire_height: f32,
 }
 
 pub struct TerrainBuffer {
@@ -48,7 +50,9 @@ impl TerrainBuffer {
         device: &wgpu::Device,
         binder: &UniformBinder<TerrainData>,
         tile_size: u32,
-        terrain_height: f32,
+        mountain_height: f32,
+        dune_height: f32,
+        spire_height: f32,
     ) -> Self {
         let mut index_data = Vec::new();
         for z in 0..tile_size - 1 {
@@ -67,8 +71,10 @@ impl TerrainBuffer {
         let terrain_data = BackedBuffer::with_data(
             &device,
             vec![TerrainData {
-                terrain_height,
                 tile_size: tile_size as f32,
+                mountain_height,
+                dune_height,
+                spire_height,
             }],
             wgpu::BufferUsages::UNIFORM,
         );

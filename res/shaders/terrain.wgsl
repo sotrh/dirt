@@ -1,5 +1,5 @@
 struct TerrainData {
-    terrain_height__tile_size: vec2<f32>,
+    tile_size__mountains__dunes__spires: vec4<f32>,
 }
 
 struct TerrainVertex {
@@ -50,11 +50,11 @@ fn displace_terrain(
    instance: TileInstance,
 ) -> VsOut {
     let i = f32(index);
-    let num_vertices = terrain_data.terrain_height__tile_size.y;
+    let num_vertices = terrain_data.tile_size__mountains__dunes__spires.x;
     let x = floor(i % num_vertices) + instance.tile_offset.x;
     let z = floor(i / num_vertices) + instance.tile_offset.y;
 
-    let v = terrain_vertex(vec2(x, z), terrain_data.terrain_height__tile_size.x);
+    let v = terrain_vertex(vec2(x, z), terrain_data);
 
     let frag_position = camera.view_proj * vec4(v.position, 1.0);
     let debug = random_color(vec2(i, 0.0));
@@ -68,19 +68,9 @@ fn displace_terrain(
 }
 
 @fragment
-fn debug(vs: VsOut) -> @location(0) vec4<f32> {
-    let v = terrain_vertex(vs.world_position.xz, terrain_data.terrain_height__tile_size.x);
-    return vec4(
-        vec3(v.normal.x),
-        // to_srgb(v.normal),
-        1,
-    );
-}
-
-@fragment
 fn triplanar_shaded(vs: VsOut) -> @location(0) vec4<f32> {
     // Adapted from https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader-10bf39dca05a
-    let v = terrain_vertex(vs.world_position.xz, terrain_data.terrain_height__tile_size.x);
+    let v = terrain_vertex(vs.world_position.xz, terrain_data);
     var vs_world_normal = v.normal;
 
     let cos_theta = max(dot(vs_world_normal, vec3(0.0, 1.0, 0.0)), 0.0);
@@ -141,6 +131,24 @@ fn triplanar_shaded(vs: VsOut) -> @location(0) vec4<f32> {
     return vec4(result, 1.0);
 }
 
+@fragment
+fn debug(vs: VsOut) -> @location(0) vec4<f32> {
+    let v = terrain_vertex(vs.world_position.xz, terrain_data);
+
+    // let blend = voronoi_blend(vs.world_position.xz * 0.01, 0.3);
+
+    return vec4(
+        // vec3(f32(voronoi_cell(vs.world_position.xz * 0.005).x > 0.25)),
+        // vec3(voronoi_cell(vs.world_position.xz * 0.005).y),
+        // vec3(v.normal.x),
+        // to_srgb(v.normal),
+        v.normal * 0.5 + 0.5,
+        // blend.xyz,
+        // vec3(blend.x),
+        1,
+    );
+}
+
 fn to_srgb(rgb: vec3<f32>) -> vec3<f32> {
     let cutoff = rgb < vec3(0.0031308);
     let higher = vec3(1.055) * pow(rgb, vec3(1.0 / 2.4)) - vec3(0.055);
@@ -157,14 +165,14 @@ fn to_linear(srgb: vec3<f32>) -> vec3<f32> {
     return select(higher, lower, cutoff);
 }
 
-fn terrain_vertex(p: vec2<f32>, max_height: f32) -> TerrainVertex {
-    let v = terrain_point(p, max_height);
+fn terrain_vertex(p: vec2<f32>, data: TerrainData) -> TerrainVertex {
+    let v = terrain_point(p, data);
 
-    let tpx = terrain_point(p + vec2<f32>(0.01, 0.0), max_height) - v;
-    let tnx = terrain_point(p + vec2<f32>(-0.01, 0.0), max_height) - v;
+    let tpx = terrain_point(p + vec2<f32>(0.01, 0.0), data) - v;
+    let tnx = terrain_point(p + vec2<f32>(-0.01, 0.0), data) - v;
 
-    let tpz = terrain_point(p + vec2<f32>(0.0, 0.01), max_height) - v;
-    let tnz = terrain_point(p + vec2<f32>(0.0, -0.01), max_height) - v;
+    let tpz = terrain_point(p + vec2<f32>(0.0, 0.01), data) - v;
+    let tnz = terrain_point(p + vec2<f32>(0.0, -0.01), data) - v;
 
     let pn = normalize(cross(tpz, tpx));
     let nn = normalize(cross(tnz, tnx));
@@ -174,17 +182,23 @@ fn terrain_vertex(p: vec2<f32>, max_height: f32) -> TerrainVertex {
     return TerrainVertex(v, n);
 }
 
-fn terrain_point(p: vec2<f32>, max_height: f32) -> vec3<f32> {
-    let y0 = fbm(p) * max_height;
-    let y1 = smooth_voronoi(p * 0.01 + snoise2(p * 0.01) * 0.1) * max_height;
-    // let y1 = smooth_voronoi(p * 0.01) * max_height;
-    return vec3<f32>(
-        p.x,
-        // mix(y0, y1, 1.0),
-        mix(y0, y1, snoise2(p * 0.001) * 0.5 + 0.5),
-        // mix(y0, y1, smooth_voronoi(p * 0.01)),
-        p.y,
-    );
+fn terrain_point(p: vec2<f32>, data: TerrainData) -> vec3<f32> {
+    let blend = voronoi_blend(p * 0.01, 0.3);
+
+    let y0 = mountains(p, data.tile_size__mountains__dunes__spires.y);
+    let y1 = dunes(p, 0.05, 0.01, 0.01, data.tile_size__mountains__dunes__spires.z);
+    let yf = y0 * blend.x + y1 * blend.y;
+    // let yf = 0.0;
+
+    return vec3<f32>(p.x, yf, p.y);
+}
+
+fn mountains(p: vec2<f32>, max_height: f32) -> f32 {
+    return fbm(p) * max_height;
+}
+
+fn dunes(p: vec2<f32>, freq: f32, offset_freq: f32, offset_amp: f32, max_height: f32) -> f32 {
+    return smooth_voronoi(p * freq + snoise2(p * offset_freq) * offset_amp) * max_height;
 }
 
 fn fbm(p: vec2<f32>) -> f32 {
@@ -203,7 +217,7 @@ fn fbm(p: vec2<f32>) -> f32 {
         a = a * 0.5;
     }
 
-    return v;
+    return v * 0.5 + 0.5;
 }
 
 fn smooth_voronoi(x: vec2<f32>) -> f32 {
@@ -224,10 +238,39 @@ fn smooth_voronoi(x: vec2<f32>) -> f32 {
     return pow(1.0 / res, 1.0 / 16.0);
 }
 
+fn voronoi_blend(p: vec2<f32>, cutoff: f32) -> vec4<f32> {
+    let g = floor(p);
+
+    var blend = vec4(0.0);
+    var _d = 10.0;
+
+    for (var j = -1; j <= 1; j++) {
+        for (var i = -1; i < 1; i++) {
+            let b = g + vec2(f32(i), f32(j));
+            let q = b + hash(b);
+            let index = u32(2.0 * hash(b));
+            let r = (p - q);
+            let d = dot(r, r);
+
+            var col = vec4(0.0);
+            col[index] = 1.0;
+
+            
+            let h = smoothstep(-1.0, 1.0, (_d-d)/cutoff);
+            _d = mix(_d, d, h) - h*(1.0-h)*cutoff/(1.0+3.0*cutoff);
+            blend = mix(blend, col, h) - h*(1.0-h)*cutoff/(1.0+3.0*cutoff);
+        }
+    }
+
+    return normalize(blend);
+}
+
+fn offset(p: vec2<f32>) -> vec2<f32> {
+    return vec2(hash(p.xx), hash(p.yy));
+}
+
 fn hash(p: vec2<f32>) -> f32 {
-    let p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
-    let p3_dot = dot(p3, vec3<f32>(p3.y, p3.z, p3.x) + 19.19);
-    return fract((p3.x + p3.y) * p3_dot);
+    return fract(sin(dot(p.xy, vec2(12.9898,78.233))) * 43758.5453123);
 }
 
 fn random_color(p: vec2<f32>) -> vec3<f32> {
