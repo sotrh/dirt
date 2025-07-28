@@ -183,12 +183,11 @@ fn terrain_vertex(p: vec2<f32>, data: TerrainData) -> TerrainVertex {
 }
 
 fn terrain_point(p: vec2<f32>, data: TerrainData) -> vec3<f32> {
-    let blend = voronoi_blend(p * 0.01, 0.3);
+    let blend = biome_blend(p);
 
     let y0 = mountains(p, data.tile_size__mountains__dunes__spires.y);
     let y1 = dunes(p, 0.05, 0.01, 0.01, data.tile_size__mountains__dunes__spires.z);
     let yf = y0 * blend.x + y1 * blend.y;
-    // let yf = 0.0;
 
     return vec3<f32>(p.x, yf, p.y);
 }
@@ -236,6 +235,28 @@ fn smooth_voronoi(x: vec2<f32>) -> f32 {
     }
 
     return pow(1.0 / res, 1.0 / 16.0);
+}
+
+fn biome_blend(p: vec2<f32>) -> vec4<f32> {
+    let r = 200.0;
+    let c = vec2(terrain_data.tile_size__mountains__dunes__spires.x * 16.0);
+
+    let d = length(p - c) - r;
+
+    let f = d / r * 0.5 + 0.5;
+
+    var blend = vec4(
+        max(1.0 - f, 0.0),
+        max(f, 0.0),
+        0.0,
+        0.0,
+    );
+
+    let sum = blend.x + blend.y + blend.z + blend.w;
+
+    blend *= 1.0 / sum;
+
+    return blend;
 }
 
 fn voronoi_blend(p: vec2<f32>, cutoff: f32) -> vec4<f32> {
