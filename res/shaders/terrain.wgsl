@@ -243,7 +243,10 @@ fn biome_blend(p: vec2<f32>) -> vec4<f32> {
 
     let d = length(p - c) - r;
 
-    let f = d / r * 0.5 + 0.5;
+    // var f = d / r;
+    var f = d / r * 0.5 + 0.5;
+    f = cos(f * 3.14159) * 0.5;
+    f *= f;
 
     var blend = vec4(
         max(1.0 - f, 0.0),
